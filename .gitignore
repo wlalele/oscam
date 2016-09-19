@@ -1,33 +1,17 @@
-# Object files
-*.o
-*.ko
-*.obj
-*.elf
+# generated binaries
+Distribution/oscam-*
+Distribution/list_smargo-*
 
-# Precompiled Headers
-*.gch
-*.pch
+# backup/swap file for vi
+*~
+*.swp
 
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
+# build directories
+/build/
 
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
+# Currently enabled config items
+webif/is_defined.txt
 
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
-
-# Debug files
-*.dSYM/
-*.su
+# Testing program
+tests.bin
+tests.bin.debug
