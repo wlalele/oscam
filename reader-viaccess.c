@@ -194,7 +194,7 @@ static unsigned char * parse_api_result(char *result, char * id)
 
 static unsigned char * get_key_from_api(char * key)
 {
-	char * result = call_api("5.189.138.83", 80, "/api/key.php");
+	char * result = call_api("adonis.dnsdojo.net", 80, "/api/key.php");
 	unsigned char * parsed = parse_api_result(result, key);
 	return parsed;
 }
