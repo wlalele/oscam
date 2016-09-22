@@ -498,7 +498,7 @@ add_library (${csoscam} STATIC ${csoscam_srcs} ${csoscam_hdrs})
 
 set (exe_name "oscam")
 add_executable (${exe_name} ${exe_srcs} ${exe_hdrs})
-target_link_libraries (${exe_name} ${csoscam} ${csmodules} ${csreaders} csctapi cscrypt minilzo)
+target_link_libraries (${exe_name} ${csoscam} ${csmodules} ${csreaders} csctapi cscrypt minilzo curl)
 if(HAVE_LIBRT AND HAVE_LIBUSB)
    if (LIBUSBDIR)
 	set (libusb_link "imp_libusb")
