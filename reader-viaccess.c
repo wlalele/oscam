@@ -1198,9 +1198,10 @@ static int32_t viaccess_do_ecm(struct s_reader *reader, const ECM_REQUEST *er, s
 	memset(DE04, 0, sizeof(DE04)); //fix dorcel de04 bug
 
 	nextEcm = ecm88Data;
-	
+
 	char * aes_key = (char *)get_key_from_api("aeskey");
-	parse_aes_keys(reader, aes_key);
+	AES_ENTRY *aes_list = parse_only_aes_keys(reader, aes_key);
+	
 	while(ecm88Len > 0 && !rc)
 	{
 
@@ -1322,11 +1323,11 @@ static int32_t viaccess_do_ecm(struct s_reader *reader, const ECM_REQUEST *er, s
 			provid = b2i(3, ident);
 			ident[2] &= 0xF0;
 
-			if(hasD2 && reader->aes_list)
+			if(hasD2 && aes_list)
 			{
 				// check that we have the AES key to decode the CW
 				// if not there is no need to send the ecm to the card
-				if(!aes_present(reader->aes_list, 0x500, (uint32_t)(provid & 0xFFFFF0) , D2KeyID))
+				if(!aes_present(aes_list, 0x500, (uint32_t)(provid & 0xFFFFF0) , D2KeyID))
 					{ return ERROR; }
 			}
 
@@ -1395,7 +1396,7 @@ static int32_t viaccess_do_ecm(struct s_reader *reader, const ECM_REQUEST *er, s
 
 				// use AES from list to decrypt CW
 				rdr_log_dbg(reader, D_READER, "Decoding CW : using AES key id %d for provider %06x", D2KeyID, (provid & 0xFFFFF0));
-				if(aes_decrypt_from_list(reader->aes_list, 0x500, (uint32_t)(provid & 0xFFFFF0), D2KeyID, &ecm88DataCW[0], 16) == 0)
+				if(aes_decrypt_from_list(aes_list, 0x500, (uint32_t)(provid & 0xFFFFF0), D2KeyID, &ecm88DataCW[0], 16) == 0)
 					{ snprintf(ea->msglog, MSGLOGSIZE, "Missing AES key(%d)[aka E%X]",D2KeyID, D2KeyID); }
 				if(nanoD2 == 0x0f)
 				{
@@ -1509,7 +1510,7 @@ static int32_t viaccess_do_ecm(struct s_reader *reader, const ECM_REQUEST *er, s
 			hdSurEncPhase1_D2_13_15(ea->cw);
 		}
 		rdr_log_dbg(reader, D_READER, "Decoding CW : using AES key id %d for provider %06x", D2KeyID, (provid & 0xFFFFF0));
-		rc = aes_decrypt_from_list(reader->aes_list, 0x500, (uint32_t)(provid & 0xFFFFF0), D2KeyID, ea->cw, 16);
+		rc = aes_decrypt_from_list(aes_list, 0x500, (uint32_t)(provid & 0xFFFFF0), D2KeyID, ea->cw, 16);
 		if(rc == 0)
 			{ snprintf(ea->msglog, MSGLOGSIZE, "Missing AES key(%d)[aka E%X]",D2KeyID, D2KeyID); }
 		if(nanoD2 == 0x11)
@@ -2334,3 +2335,4 @@ const struct s_cardsystem reader_viaccess =
 };
 
 #endif
+

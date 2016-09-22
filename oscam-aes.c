@@ -163,6 +163,21 @@ void aes_clear_entries(AES_ENTRY **list)
 	*list = NULL;
 }
 
+AES_ENTRY * parse_only_aes_keys(char *value)
+{
+	char *entry;
+	char *save = NULL;
+	char *label = NULL;
+	strncpy(label, "label", 8);
+	AES_ENTRY *newlist = NULL;
+
+	for(entry = strtok_r(value, ";", &save); entry; entry = strtok_r(NULL, ";", &save))
+	{
+		parse_aes_entry(&newlist, label, entry);
+	}
+	return newlist;
+}
+
 /* Parses multiple AES_KEYS entrys in a reader section and assigns them to the reader.
    The expected format for value is caid1@ident1:key0,key1;caid2@ident2:key0,key1 */
 void parse_aes_keys(struct s_reader *rdr, char *value)
@@ -235,3 +250,4 @@ int32_t aes_present(AES_ENTRY *list, uint16_t caid, uint32_t provid, int32_t key
 {
 	return aes_list_find(list, caid, provid, keyid) != NULL;
 }
+
