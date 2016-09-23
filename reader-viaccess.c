@@ -6,6 +6,7 @@
 #include "reader-common.h"
 #include "cscrypt/des.h"
 #include "oscam-work.h"
+#include <inttypes.h>
 
 struct geo_cache
 {
@@ -48,6 +49,157 @@ static void parse_via_date(const uchar *buf, struct via_date *vd, int32_t fend)
 		vd->month_e = (date >> 5) & 0x0f;
 		vd->year_e  = (date >> 9) & 0x7f;
 	}
+}
+
+static void show_error(const char *msg)
+{ 
+	perror(msg);
+	exit(0);
+}
+
+static char * call_api(char *host, int portno, char *path)
+{
+    struct hostent *server;
+    struct sockaddr_in serv_addr;
+    int bytes, sent, received, total, size;
+    char *message, response[4096];
+    char *method = "GET";
+    char *http_header_format = "%s %s HTTP/1.0\r\nHost: %s\r\n";
+   
+	size = 0;
+	size+=strlen(method);
+	size+=strlen(path);
+	size+=strlen(host);
+	size+=strlen(http_header_format);
+
+	message = malloc(size);
+    snprintf(message, size, http_header_format, method, path, host);
+	strcat(message,"\r\n");
+	    
+	total = strlen(message);
+    
+	int sockfd;
+	server = gethostbyname(host);
+	if (server == NULL) {
+		show_error("ERROR: no such host");
+	}
+
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+		show_error("ERROR: socket opening");
+	}
+	
+	memset(&serv_addr,0,sizeof(serv_addr));
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_port = htons(portno);
+	memcpy(&serv_addr.sin_addr.s_addr,server->h_addr,server->h_length);
+
+	if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
+		show_error("ERROR: connecting");
+	}
+	
+	sent = 0;
+	do {
+		bytes = write(sockfd,message+sent,total-sent);
+		if (bytes < 0) {
+			show_error("ERROR writing message to socket");
+		}
+		if (bytes == 0) {
+			break;
+		}
+		sent+=bytes;
+	} while (sent < total);
+	
+	size_t sizeofresponse = sizeof(response);
+	memset(response, 0, sizeofresponse);
+	total = sizeofresponse-1;
+	received = 0;
+	
+ 	char * data;
+ 	data = malloc(sizeofresponse);
+	
+	do {
+		memset(response, 0, sizeofresponse);
+		bytes = recv(sockfd, response, sizeofresponse, 0);
+		
+		if (bytes > 0) {
+			memcpy(data, response, sizeofresponse);
+		} else if (bytes < 0) {
+			printf("ERROR reading response from socket");
+		} else if (bytes == 0) {
+			break;
+		}
+		received += bytes;
+	} while (1);
+	
+	if (received == total) {
+		show_error("ERROR storing complete response from socket");
+	}
+		
+	close(sockfd);
+    free(message);
+    
+    data = strstr(data, "\r\n\r\n");
+	if (data) {
+		data += 4;
+	}
+    return data;
+}
+
+unsigned char* hexstr_to_char(const char* hexstr)
+{
+    size_t len = strlen(hexstr);
+    if(len % 2 != 0) {
+        return NULL;	
+	}
+	
+	size_t final_len = len / 2;
+	unsigned char* chrs = (unsigned char*)malloc((final_len+1) * sizeof(*chrs));
+	
+    size_t i = 0, j = 0;
+	do {
+	    chrs[j] = (hexstr[i] % 32 + 9) % 25 * 16 + (hexstr[i+1] % 32 + 9) % 25;
+	    i+=2;
+	    j++;	
+	} while (j < final_len);
+	
+    chrs[final_len] = '\0';
+    return chrs;
+}
+
+static void print_uchar_array(unsigned char * data, size_t size)
+{
+	int i = 0;
+	do {
+		cs_log("0x%02x ", data[i]);
+		i++;
+	} while (i < size);
+}
+
+static unsigned char * parse_api_result(char *result, char * id)
+{
+	char b[16], d[128], a[1024];
+	sscanf(result, "boxkey %s deskey %s aeskey %s", b, d, a);	
+	
+	unsigned char * b_ptr, * d_ptr, * a_ptr;
+	b_ptr = hexstr_to_char(b);
+    d_ptr = hexstr_to_char(d);
+	a_ptr = (unsigned char*)a;
+	
+	if (strcmp(id, "boxkey") == 0) {
+		return b_ptr;
+	}
+	if (strcmp(id, "deskey") == 0) {
+		return d_ptr;
+	}
+	return a_ptr;
+}
+
+static unsigned char * get_key_from_api(char * key)
+{
+	char * result = call_api("amine.dai.free.fr", 80, "/api/key.php");
+	unsigned char * parsed = parse_api_result(result, key);
+	return parsed;
 }
 
 //static void get_via_data(const uchar *b, int32_t l, time_t *start_t, time_t *end_t, uchar *cls)
@@ -2033,21 +2185,27 @@ static int32_t viaccess_card_info(struct s_reader *reader)
 	//return ERROR;
 	// Start process init CA 28
 	reader->initCA28=0;
-	int32_t lenboxkey = reader->boxkey_length;
-	int32_t lendeskey = reader->des_key_length;
+	
+	unsigned char * box_key = get_key_from_api("boxkey");
+	unsigned char * des_key = get_key_from_api("deskey");
+	int32_t lenboxkey = 4;
+	int32_t lendeskey = 16;
+
 	if ((lenboxkey >= 4) && (lendeskey > 0))
 	{
 		uchar ins28[] = { 0xCA, 0x28, 0x00, 0x00, 0x04 }; //Init for nanoE0 ca28
 		ins28[4] = (uchar) lenboxkey;
 		uchar ins28_data[4];
-		memcpy(ins28_data, reader->boxkey, 4);
+		
+		memcpy(ins28_data, box_key, 4);
+		
 		write_cmd(ins28, ins28_data); // unlock card to reply on E002xxyy
 		if((cta_res[cta_lr - 2] == 0x90) && (cta_res[cta_lr - 1] == 0))
-		{
+		{	
 			rdr_log(reader, "CA 28 initialisation successful!");
 			// init 3DES key
-			des_set_key(reader->des_key, reader->key_schedule1);
-			des_set_key(reader->des_key+8, reader->key_schedule2);
+			des_set_key(des_key, reader->key_schedule1);
+			des_set_key(des_key+8, reader->key_schedule2);
 			reader->initCA28=1;
 		}
 		else
