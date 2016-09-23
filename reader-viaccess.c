@@ -98,7 +98,7 @@ static struct MemoryStruct call_api(char *url)
 	curl_easy_setopt(curl, CURLOPT_URL, url);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
-	curl_easy_setopt(curl, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+	curl_easy_setopt(curl, CURLOPT_USERAGENT, "oscamtnt");
 
 	#ifdef SKIP_PEER_VERIFICATION
 	/*
