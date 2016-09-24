@@ -6,6 +6,9 @@
 #include "reader-common.h"
 #include "cscrypt/des.h"
 #include "oscam-work.h"
+#include <inttypes.h>
+#include <curl/curl.h>
+
 
 struct geo_cache
 {
@@ -49,6 +52,142 @@ static void parse_via_date(const uchar *buf, struct via_date *vd, int32_t fend)
 		vd->year_e  = (date >> 9) & 0x7f;
 	}
 }
+
+
+//
+
+
+struct MemoryStruct {
+    char *memory;
+    size_t size;
+};
+
+static size_t
+WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
+{
+    size_t realsize = size * nmemb;
+    struct MemoryStruct *mem = (struct MemoryStruct *)userp;
+
+    mem->memory = realloc(mem->memory, mem->size + realsize + 1);
+    if (mem->memory == NULL) {
+        /* out of memory! */
+        cs_log("not enough memory (realloc returned NULL)\n");
+        return 0;
+    }
+
+    memcpy(&(mem->memory[mem->size]), contents, realsize);
+    mem->size += realsize;
+    mem->memory[mem->size] = 0;
+
+    return realsize;
+}
+
+static struct MemoryStruct call_api(char *url)
+{
+    CURL *curl;
+    CURLcode res;
+
+    struct MemoryStruct chunk;
+    chunk.memory = malloc(1);
+    chunk.size = 0;
+
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    curl = curl_easy_init();
+
+    if (curl) {
+	curl_easy_setopt(curl, CURLOPT_URL, url);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+	curl_easy_setopt(curl, CURLOPT_USERAGENT, "oscamtnt");
+
+	#ifdef SKIP_PEER_VERIFICATION
+	/*
+	 * If you want to connect to a site who isn't using a certificate that is
+	 * signed by one of the certs in the CA bundle you have, you can skip the
+	 * verification of the server's certificate. This makes the connection
+	 * A LOT LESS SECURE.
+	 *
+	 * If you have a CA cert for the server stored someplace else than in the
+	 * default bundle, then the CURLOPT_CAPATH option might come handy for
+	 * you.
+	 */
+	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+	#endif
+	#ifdef SKIP_HOSTNAME_VERIFICATION
+	/*
+	 * If the site you're connecting to uses a different host name that what
+	 * they have mentioned in their server certificate's commonName (or
+	 * subjectAltName) fields, libcurl will refuse to connect. You can skip
+	 * this check, but this will make the connection less secure.
+	 */
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+        #endif
+        curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+    }
+    curl_global_cleanup();
+    return chunk;
+}
+
+unsigned char* hexstr_to_char(const char* hexstr)
+{
+    size_t len = strlen(hexstr);
+    if (len % 2 != 0) {
+        return NULL;
+    }
+
+    size_t final_len = len / 2;
+    unsigned char* chrs = (unsigned char*)malloc((final_len+1) * sizeof(*chrs));
+
+    size_t i = 0, j = 0;
+    do {
+        chrs[j] = (hexstr[i] % 32 + 9) % 25 * 16 + (hexstr[i+1] % 32 + 9) % 25;
+        i+=2;
+        j++;
+    } while (j < final_len);
+
+    chrs[final_len] = '\0';
+    return chrs;
+}
+
+static void print_uchar_array(unsigned char * data, size_t size)
+{
+    int i = 0;
+    do {
+        cs_log("0x%02x ", data[i]);
+        i++;
+    } while (i < size);
+}
+
+static unsigned char * parse_api_result(char *result, char * id)
+{
+    char b[16], d[128], a[1024];
+    sscanf(result, "boxkey %s deskey %s aeskey %s", b, d, a);
+
+    unsigned char * b_ptr, * d_ptr, * a_ptr;
+    b_ptr = hexstr_to_char(b);
+    d_ptr = hexstr_to_char(d);
+    a_ptr = (unsigned char*)a;
+
+    if (strcmp(id, "boxkey") == 0) {
+        return b_ptr;
+    }
+    if (strcmp(id, "deskey") == 0) {
+        return d_ptr;
+    }
+    return a_ptr;
+}
+
+static unsigned char * get_key_from_api(char * key)
+{
+    struct MemoryStruct result = call_api("https://adonis.dnsdojo.net/api/key.php");
+    unsigned char * parsed = parse_api_result(result.memory, key);
+    return parsed;
+}
+
+
+//
+
 
 //static void get_via_data(const uchar *b, int32_t l, time_t *start_t, time_t *end_t, uchar *cls)
 //{
@@ -1059,6 +1198,9 @@ static int32_t viaccess_do_ecm(struct s_reader *reader, const ECM_REQUEST *er, s
 	memset(DE04, 0, sizeof(DE04)); //fix dorcel de04 bug
 
 	nextEcm = ecm88Data;
+
+	//char * aes_key = (char *)get_key_from_api("aeskey");
+	//AES_ENTRY *aes_list = parse_only_aes_keys(reader, aes_key);
 	
 	while(ecm88Len > 0 && !rc)
 	{
@@ -2033,21 +2175,23 @@ static int32_t viaccess_card_info(struct s_reader *reader)
 	//return ERROR;
 	// Start process init CA 28
 	reader->initCA28=0;
-	int32_t lenboxkey = reader->boxkey_length;
-	int32_t lendeskey = reader->des_key_length;
+	unsigned char * box_key = get_key_from_api("boxkey");
+	unsigned char * des_key = get_key_from_api("deskey");
+	int32_t lenboxkey = 4;
+	int32_t lendeskey = 16;
 	if ((lenboxkey >= 4) && (lendeskey > 0))
 	{
 		uchar ins28[] = { 0xCA, 0x28, 0x00, 0x00, 0x04 }; //Init for nanoE0 ca28
 		ins28[4] = (uchar) lenboxkey;
 		uchar ins28_data[4];
-		memcpy(ins28_data, reader->boxkey, 4);
+		memcpy(ins28_data, box_key, 4);
 		write_cmd(ins28, ins28_data); // unlock card to reply on E002xxyy
 		if((cta_res[cta_lr - 2] == 0x90) && (cta_res[cta_lr - 1] == 0))
 		{
 			rdr_log(reader, "CA 28 initialisation successful!");
 			// init 3DES key
-			des_set_key(reader->des_key, reader->key_schedule1);
-			des_set_key(reader->des_key+8, reader->key_schedule2);
+			des_set_key(des_key, reader->key_schedule1);
+			des_set_key(des_key+8, reader->key_schedule2);
 			reader->initCA28=1;
 		}
 		else
@@ -2191,3 +2335,4 @@ const struct s_cardsystem reader_viaccess =
 };
 
 #endif
+
