@@ -21,3 +21,6 @@ webif/is_defined.txt
 # Testing program
 tests.bin
 tests.bin.debug
+
+# Idea
+.idea
