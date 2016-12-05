@@ -1,0 +1,100 @@
+4b129 buildscript: hide upx error.
+22df0 CMakeLists: build position independent executable for android.
+2ea7d build scripts: add support for android.
+ed4b9 support to build for android
+2519b fix lost librt for android ndk.
+277a6 jet: comment out unused byte function in jet_twofish
+5074f jet: fix mktime when get entitlements.
+d1fb0 add some config to Distribution docs.
+c5714 jet: add config for fix ecm head.
+b00f2 dvbapi: fix setting ecm filter for dvn jetcas.
+37a82 fix cw check and get odd/even  for dvn jetcas.
+241c0 dvbapi: for dvn, try to fix odd/even ecm filter check.
+b8ec3 jet: parse entitlements info.
+be5c4 Merge from 'streamboard.tv' to r11281
+4ddb0 fix odd even check for jet.
+b1031 dvbapi: not handle unique ecm part for streamguard.
+2e65a dvbapi: for jet, not stop filter for unique ecm.
+04759 dvbapi: for jet, not wait for odd/even ecm change.
+ebdb9 DVBAPI: fix for DVN, set ecm table id to 0x50.
+c1132 gbx: - Fix for local card with caprovid 00000000. Happens when oscam is patched with emu - Add log/msg for peer on-offline, authentication and connection lost - Add OSD notification for incoming GSMS - OSD feature enabled by suitable 'msg.osd' in tmp_dir - Add and update some debug log outputs
+de831 - Add support of ORF P4 Irdeto mode - Patch provided and tested by Optimum Power - Fix for Ticket #4517
+2b0d0 jet: fix ecm decrypt.
+44ebf jet: fix parse ecm.
+c4702 dvbapi: fix parse cat for caid 0x4Axx.
+a08c2 jet: fill boxkey with 0xEE default.
+71d32 jet: output more debug message for init.
+89375 jet: add debug code in Sci_Reset.
+b2b6a jet: auto check whether set key in twofish.
+cd0e8 fix boxkey length for jet.
+a7773 jet: continue work when something failed.
+125fe jet: clean some compile warning.
+fefc0 jet: continue work when update vendor key failed.
+1ebb8 jet: update protocol_t0 for jet.
+00951 jet: append 90 00 to command.
+7c8ec jet: add debug info for T0 command.
+9afa8 jet: fix encrypt output
+20217 jet: rename tag to ins by iso7816
+74d9c jet: fix compile warning for size_t in printf.
+05142 jet: fix compile warning in jet_twofish.
+f0c76 jet: fix conflict in printf long long unsigned int and uint64_t.
+57bc9 jet: check atr by DVN identity.
+0c9d0 Revert "jet: try to change card params."
+b7e65 jet: try to change card params.
+ceb60 jet: fix cmd len.
+60b87 Revert "add ETU config for reader."
+f80d5 add ETU config for reader.
+67c84 jet: support old version card.
+c69aa jet: fix and update init.
+7eb99 jet: change Boxkey to textarea in webif.
+2f95e jet: update twofish
+d7856 jet: when updated vendor key, update twofish key.
+6b112 jet: fix comments for twofish.
+a8828 jet: fix for "warning: statement with no effect"
+af970 jet: remove unused varible i.
+8309a jet: fill data with 0xFF before encrypt.
+6e980 jet: fix calc_crc16.
+1e90d jet: update and rename twofish to jet_twofish, fix it for jet.
+2ace7 jet: now just support version 5.
+650c8 jet: compile towfish when enable jet.
+81540 jet: implement do emm.
+75a6e jet: update some message for write_cmd.
+f9401 jet: implement do ecm.
+37c47 jet: finished init function, merge some command.
+2860e jet: add for register service key and confirm box in init.
+79ecc jet: add for get service key in init.
+1d13d jet: update boxkey webif config for jet.
+adf67 jet: add pairing for init.
+190ae jet: add change vendor key for init.
+46263 jet: add confirm auth for init.
+3b247 jet: fix compile error.
+a2881 jet: try to simplify write cmd.
+a93df jet: add lost declear in readers.h
+dbf54 jet: fix twofish compile error
+c9385 jet: add support to get root key,derive key and auth key.
+2f1a2 jet: add crc16 and encrypt function.
+475b2 jet: init add reader jet
+5d342 jet: add towfish algorithm
+48c91 remove cas_version from reader config.
+edf4b streamguard: clean a compile warning.
+1f8fc fix compile warning for size_t in printf.
+c927e fix conflict in printf long long unsigned int and uint64_t.
+09c60 scripts: remove --no-warn-unuserd-cli parameter and some deprecated config.
+ae1a6 update .svnrevision to 11279
+01388 scripts: fix compile warning for i686linux.
+3c9c7 Merge from www.streamboard.tv to r11279
+62892 gbx: - Prepare code for more generalized OSD messages - renamed driver sh from goodnight.osd to msg.osd
+bf28b gbx: try to fix sporadic malfunction of server init
+1c1b3 fix warning "Manually-specified variables were not used by the project"
+ce1f6 pcsc: add alternate shared library support.
+70731 update .svnrevisino to 11277
+29407 cmakelists: fix link error when use libpcsclite.so.0
+baad7 Merge from http://www.streamboard.tv/svn/oscam
+a7e04 tongfang: parse version 1 and 2.
+baa5e tongfang: just use version 1/2 command for get serial number in old version card.
+b3f8f emulator: adjust log prefix.
+679e3 streamguard/tongfang: fix caids of s_cardsystem.
+ab643 tongfang/streamguard: update for show entitlements.
+7c1d6 Increase ECM length for Viaccess. Patch provided by  pr2
+1b86c tongfang: try pairing to FFFFFFFF when confirm commkey return 0x94b2.
+1c1c1 tongfang/streamguard: clean some debug message, show entitlements in log.

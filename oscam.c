@@ -41,6 +41,11 @@
 #include "reader-common.h"
 #include "module-gbox.h"
 
+#ifdef WITH_EMU
+	void add_emu_reader(void);
+	void stop_stream_server(void);
+#endif
+
 #ifdef WITH_SSL
 #include <openssl/crypto.h>
 #include <openssl/ssl.h>
@@ -329,7 +334,7 @@ static void parse_cmdline_params(int argc, char **argv)
 			if(config_enabled(WEBIF))
 			{
 				cs_http_use_utf8 = 1;
-				printf("WARNING: Web interface UTF-8 mode enabled. Carefully read documentation as bugs may arise.\n");
+//				printf("WARNING: Web interface UTF-8 mode enabled. Carefully read documentation as bugs may arise.\n");
 			}
 			break;
 		case 'V': // --build-info
@@ -408,6 +413,7 @@ static void write_versionfile(bool use_stdout)
 	write_conf(CW_CYCLE_CHECK, "CW Cycle Check support");
 	write_conf(LCDSUPPORT, "LCD support");
 	write_conf(LEDSUPPORT, "LED support");
+	write_conf(WITH_EMU, "Emulator support");
 	switch (cs_getclocktype()) {
 		case CLOCK_TYPE_UNKNOWN  : write_conf(CLOCKFIX, "Clockfix with UNKNOWN clock"); break;
 		case CLOCK_TYPE_REALTIME : write_conf(CLOCKFIX, "Clockfix with realtime clock"); break;
@@ -444,6 +450,8 @@ static void write_versionfile(bool use_stdout)
 		write_readerconf(READER_VIDEOGUARD, "NDS Videoguard");
 		write_readerconf(READER_DRE, "DRE Crypt");
 		write_readerconf(READER_TONGFANG, "TONGFANG");
+		write_readerconf(READER_STREAMGUARD, "StreamGuard");
+		write_readerconf(READER_JET, "Jet");
 		write_readerconf(READER_BULCRYPT, "Bulcrypt");
 		write_readerconf(READER_GRIFFIN, "Griffin");
 		write_readerconf(READER_DGCRYPT, "DGCrypt");
@@ -504,6 +512,8 @@ static void do_report_emm_support(void)
 		report_emm_support(READER_VIDEOGUARD, "NDS Videoguard");
 		report_emm_support(READER_DRE, "DRE Crypt");
 		report_emm_support(READER_TONGFANG, "TONGFANG");
+		report_emm_support(READER_STREAMGUARD, "STREAMGUARD");
+		report_emm_support(READER_JET, "JET");
 		report_emm_support(READER_BULCRYPT, "Bulcrypt");
 		report_emm_support(READER_GRIFFIN, "Griffin");
 		report_emm_support(READER_DGCRYPT, "DGCrypt");
@@ -1363,6 +1373,17 @@ static void *reader_check(void)
 		{
 			if(!cl->thread_active)
 				{ client_check_status(cl); }
+			rdr=cl->reader;
+			if (rdr && rdr->autorestartseconds
+			    && (cl->login + (time_t)rdr->autorestartseconds) < time(NULL)){
+				if(rdr->enable){
+					rdr->enable=0;
+					kill_thread(cl);
+					cs_sleepms(cfg.reader_restart_seconds * 1000);
+				}
+				rdr->enable=1;
+				restart_cardreader(rdr, 1);
+			}
 		}
 		cs_readlock(__func__, &readerlist_lock);
 		for(rdr = first_active_reader; rdr; rdr = rdr->next)
@@ -1573,6 +1594,12 @@ const struct s_cardsystem *cardsystems[] =
 #ifdef READER_TONGFANG
 	&reader_tongfang,
 #endif
+#ifdef READER_STREAMGUARD
+	&reader_streamguard,
+#endif
+#ifdef READER_JET
+	&reader_jet,
+#endif
 #ifdef READER_BULCRYPT
 	&reader_bulcrypt,
 #endif
@@ -1625,6 +1652,9 @@ const struct s_cardreader *cardreaders[] =
 #endif
 #ifdef CARDREADER_STINGER
 	&cardreader_stinger,
+#endif
+#ifdef WITH_EMU
+	&cardreader_emu,
 #endif
 	NULL
 };
@@ -1797,6 +1827,9 @@ int32_t main(int32_t argc, char *argv[])
 
 	init_sidtab();
 	init_readerdb();
+#ifdef WITH_EMU
+	add_emu_reader();
+#endif
 	cfg.account = init_userdb();
 	init_signal();
 	init_provid();
@@ -1880,6 +1913,9 @@ int32_t main(int32_t argc, char *argv[])
 	SAFE_COND_SIGNAL(&reader_check_sleep_cond); // Stop reader_check thread
 
 	// Cleanup
+#ifdef WITH_EMU
+	stop_stream_server();
+#endif
 #ifdef MODULE_GBOX	
 	stop_sms_sender();
 #endif

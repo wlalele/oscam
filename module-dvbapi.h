@@ -136,6 +136,7 @@ struct s_ecmpids
 	int8_t useMultipleIndices;
 	uint32_t streams;
 	uint32_t cadata;
+	int16_t pvu_counter;
 };
 
 typedef struct filter_s
@@ -157,6 +158,9 @@ typedef struct filter_s
 	int32_t NumSlots;
 	uint32_t    SlotHandle[10];
 	uint32_t    BufferHandle[10];
+#endif
+#ifdef WITH_EMU
+	uint32_t cadata;
 #endif
 } FILTERTYPE;
 
@@ -250,6 +254,7 @@ struct s_dvbapi_priority
 	char pmtfile[30];
 	int8_t disablefilter;
 #endif
+	struct s_dvbapi_priority *last;
 	struct s_dvbapi_priority *next;
 };
 
@@ -350,6 +355,8 @@ int32_t dvbapi_open_device(int32_t, int32_t, int);
 int32_t dvbapi_stop_filternum(int32_t demux_index, int32_t num);
 int32_t dvbapi_stop_filter(int32_t demux_index, int32_t type);
 struct s_dvbapi_priority *dvbapi_check_prio_match(int32_t demux_id, int32_t pidindex, char type);
+void dvbapi_adjust_prioritytab(int demux_index);
+void dvbapi_write_prio(void);
 void dvbapi_send_dcw(struct s_client *client, ECM_REQUEST *er);
 void dvbapi_write_cw(int32_t demux_id, uchar *cw, int32_t pid, int32_t stream_id, enum ca_descr_algo algo, enum ca_descr_cipher_mode cipher_mode);
 int32_t dvbapi_parse_capmt(unsigned char *buffer, uint32_t length, int32_t connfd, char *pmtfile, int8_t is_real_pmt, uint16_t existing_demux_id, uint16_t client_proto_version);

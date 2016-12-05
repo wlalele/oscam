@@ -37,6 +37,9 @@ extern int32_t exit_oscam;
 #define DN_MULTISHOT 0
 #endif
 
+int32_t priority_is_changed=0;
+extern char cs_confdir[];
+
 const char *streamtxt_00_to_1B[] = {
 								"Reserved",			 																		// 00
 								"Videostream (MPEG-1)",																		// 01
@@ -126,7 +129,6 @@ const char *get_streamtxt(uint8_t id)
 		return "Reserved";
 	}
 }
-
 
 void flush_read_fd(int32_t demux_index, int32_t num, int fd)
 {
@@ -1439,7 +1441,15 @@ void dvbapi_start_emm_filter(int32_t demux_index)
 			}
 			if(match)
 			{
-				csystem = get_cardsystem_by_caid(caid);
+				if(rdr->typ == R_EMU)
+				{
+					csystem = rdr->csystem;
+				}
+				else
+				{
+					csystem = get_cardsystem_by_caid(caid);
+				}
+
 				if(csystem)
 				{
 					if(caid != ncaid)
@@ -1458,7 +1468,14 @@ void dvbapi_start_emm_filter(int32_t demux_index)
 					}
 					else if (csystem->get_emm_filter)
 					{
-						csystem->get_emm_filter(rdr, &dmx_filter, &filter_count);
+						if(rdr->typ == R_EMU)
+						{
+							csystem->get_emm_filter_adv(rdr, &dmx_filter, &filter_count, caid, provid, demux[demux_index].program_number);
+						}
+						else
+						{
+							csystem->get_emm_filter(rdr, &dmx_filter, &filter_count);
+						}
 					}
 				}
 				else
@@ -1700,7 +1717,7 @@ void dvbapi_parse_cat(int32_t demux_id, uchar *buf, int32_t len)
 			case 0x27:
 			case 0x4A:
 				
-				if(caid_is_bulcrypt(caid))
+				if(!caid_is_dre(caid))
 				{
 					dvbapi_add_emmpid(demux_id, caid, emm_pid, 0, 0, EMM_UNIQUE | EMM_SHARED | EMM_GLOBAL);
 					break;
@@ -2121,8 +2138,14 @@ int32_t dvbapi_start_descrambling(int32_t demux_id, int32_t pid, int8_t checked)
 
 			demux[demux_id].curindex = pid; // set current pid to the fresh started one
 
+			uint32_t table = 0x80;
+			uint32_t mask = 0xF0;
+			if(caid_is_dvn(demux[demux_id].ECMpids[pid].CAID)){
+				table = 0x50;
+				mask = 0xFF;
+			}
 			dvbapi_start_filter(demux_id, pid, demux[demux_id].ECMpids[pid].ECM_PID, demux[demux_id].ECMpids[pid].CAID,
-								demux[demux_id].ECMpids[pid].PROVID, 0x80, 0xF0, 3000, TYPE_ECM);
+								demux[demux_id].ECMpids[pid].PROVID, table, mask, 3000, TYPE_ECM);
 			started = 1;
 			break; // we started an ecmfilter so stop looking for next matching reader!
 		}
@@ -2136,6 +2159,7 @@ int32_t dvbapi_start_descrambling(int32_t demux_id, int32_t pid, int8_t checked)
 		dvbapi_edit_channel_cache(demux_id, pid, 0); // remove this pid from channelcache
 	}
 	if(!fake_ecm) { NULLFREE(er); }
+	dvbapi_adjust_prioritytab(demux_id);
 	return started;
 }
 
@@ -2333,8 +2357,9 @@ void dvbapi_read_priority(void)
 			return;
 		}
 
-		entry->type = type;
-		entry->next = NULL;
+		entry->type=type;
+		entry->last=NULL;
+		entry->next=NULL;
 
 		count++;
 
@@ -2480,6 +2505,129 @@ void dvbapi_read_priority(void)
 	if(ret < 0) { cs_log("ERROR: Could not close oscam.dvbapi fd (errno=%d %s)", errno, strerror(errno)); }
 	return;
 }
+
+void dvbapi_write_prio(void) {
+	FILE *fp;
+	char token[128];
+
+	const char *cs_prio="oscam.dvbapi";
+
+	if(!priority_is_changed || !dvbapi_priority )return;
+
+	snprintf(token, 127, "%s%s", cs_confdir, cs_prio);
+	fp=fopen(token, "w");
+
+	if (!fp) {
+		cs_log("can't open priority file %s to write", token);
+		return;
+	}
+	struct s_dvbapi_priority *p;
+	for (p=dvbapi_priority; p != NULL;p=p->next) {
+#ifdef WITH_STAPI
+		if(p->type == 's'){
+			fprintf(fp,"%c: %s";p->type,p->devname);
+			if(p->pmtfile[0])
+				fprintf(fp," %s",p->pmtfile);
+			if(p->disablefilter)
+				fprintf(fp," %d",p->disablefilter);
+			fprintf(fp,"\n");
+			continue;
+		}
+#endif
+
+		fprintf(fp,"%c: %04X",p->type,p->caid);
+		int loop=0;
+		for(loop=0;loop<1;loop++){
+			if(p->provid == 0xFFFFFF)continue;
+			fprintf(fp,":%06X",p->provid);
+			if(p->ecmpid==0)continue;
+			fprintf(fp,":%04X",p->ecmpid);
+			if(p->srvid == 0)continue;
+			fprintf(fp,":%04X",p->srvid);
+			if(p->chid)
+				fprintf(fp,":%04X",p->chid);
+		}
+
+		switch (p->type) {
+			case 'd':
+				if(p->delay)
+					fprintf(fp," %4x",p->delay);
+				break;
+			case 'l':
+				if(p->delay)
+					fprintf(fp, " %4d", p->delay);
+				break;
+			case 'p':
+				if(p->force)
+					fprintf(fp, " %1d:%1d", p->force,p->pidx - 1);
+				break;
+			case 'm':
+				if(p->mapcaid || p->mapprovid)
+					fprintf(fp, " %04X:%06X", p->mapcaid, p->mapprovid);
+				break;
+		}
+		fprintf(fp,"\n");
+	}
+	fclose(fp);
+}
+
+void dvbapi_cleanup(struct s_client* UNUSED(cl)){
+	dvbapi_write_prio();
+}
+
+void dvbapi_adjust_prioritytab(int32_t demux_index){
+	int32_t n;
+	int8_t k,idx;
+	bool skip_this_entry;
+	struct s_dvbapi_priority *p;
+
+	if (demux[demux_index].ECMpidcount <= 1)
+		return;
+
+	for (n=0;n<demux[demux_index].ECMpidcount;n++){
+		p=dvbapi_check_prio_match(demux_index,n,'p');
+
+		skip_this_entry=true;
+		for(k = 0; k < demux[demux_index].STREAMpidcount; k++)
+		{
+			idx = demux[demux_index].ECMpids[n].useMultipleIndices ? demux[demux_index].ECMpids[n].index[k] : demux[demux_index].ECMpids[n].index[0];
+			if (idx > 0){
+				skip_this_entry = false;
+				break;
+			}
+		}
+
+		if(skip_this_entry && p != NULL){
+			if(p->last)
+				p->last->next=p->next;
+			if(p->next)
+				p->next->last=p->last;
+			free(p);
+			priority_is_changed = 1;
+		}
+		else if(!skip_this_entry && p == NULL){
+			struct s_dvbapi_priority *entry = malloc(sizeof(struct s_dvbapi_priority));
+			memset(entry, 0, sizeof(struct s_dvbapi_priority));
+			entry->type='p';
+			entry->caid=demux[demux_index].ECMpids[n].CAID;
+			entry->provid=demux[demux_index].ECMpids[n].PROVID;
+
+			entry->last=NULL;
+			entry->next=NULL;
+			if (!dvbapi_priority) {
+				dvbapi_priority=entry;
+			} else {
+				for (p = dvbapi_priority; p->next != NULL; p = p->next);
+				entry->last=p;
+				p->next = entry;
+			}
+
+			priority_is_changed = 1;
+		}
+	}
+
+}
+
 
 void dvbapi_resort_ecmpids(int32_t demux_index)
 {
@@ -4324,6 +4472,7 @@ void dvbapi_process_input(int32_t demux_id, int32_t filter_num, uchar *buffer, i
 	if(filtertype == TYPE_ECM)
 	{
 		uint32_t chid = 0x10000;
+		int8_t pvu_skip = 0;
 		ECM_REQUEST *er;
 		
 		if(len != 0)  // len = 0 receiver encountered an internal bufferoverflow!
@@ -4340,7 +4489,7 @@ void dvbapi_process_input(int32_t demux_id, int32_t filter_num, uchar *buffer, i
 				return;
 			}			
 
-			if(!(buffer[0] == 0x80 || buffer[0] == 0x81))
+			if(!(buffer[0] == 0x80 || buffer[0] == 0x81 || (caid_is_dvn(curpid->CAID) && buffer[0] == 0x50)))
 			{
 				cs_log_dbg(D_DVBAPI, "Received an ECM with invalid ecmtable ID %02X -> ignoring!", buffer[0]);
 				if(curpid)
@@ -4350,8 +4499,23 @@ void dvbapi_process_input(int32_t demux_id, int32_t filter_num, uchar *buffer, i
 				return;
 			}
 
-			if(curpid->table == buffer[0] && !caid_is_irdeto(curpid->CAID))  // wait for odd / even ecm change (only not for irdeto!)
-			{ 
+			if(curpid->CAID>>8 == 0x0E)
+			{
+				pvu_skip = 1;
+
+				if(sctlen > 0xb)
+				{
+					if(buffer[0xb] > curpid->pvu_counter || (curpid->pvu_counter == 255 && buffer[0xb] == 0)
+							|| ((curpid->pvu_counter - buffer[0xb]) > 5))
+					{
+						curpid->pvu_counter = buffer[0xb];
+						pvu_skip = 0;
+					}
+				}
+			}
+
+			if((curpid->table == buffer[0] && !caid_is_irdeto(curpid->CAID) && !caid_is_dvn(curpid->CAID)) || pvu_skip)  // wait for odd / even ecm change (only not for irdeto and dvn!)
+			{
 				
 				if(!(er = get_ecmtask()))
 				{ 
@@ -4475,7 +4639,10 @@ void dvbapi_process_input(int32_t demux_id, int32_t filter_num, uchar *buffer, i
 		}
 
 		// check for matching chid (unique ecm part in case of non-irdeto cas) + added fix for seca2 monthly changing fakechid 
-		if((curpid->CHID < 0x10000) && !((chid == curpid->CHID) || ((curpid->CAID >> 8 == 0x01) && (chid&0xF0FF) == (curpid->CHID&0xF0FF)) ) )  
+		if((curpid->CHID < 0x10000) && !( (chid == curpid->CHID)
+						 || ((curpid->CAID >> 8 == 0x01) && (chid&0xF0FF) == (curpid->CHID&0xF0FF))
+						 || caid_is_dvn(curpid->CAID)
+						 || caid_is_streamguard(curpid->CAID) ) )
 		{
 			if(caid_is_irdeto(curpid->CAID))
 			{
@@ -4632,6 +4799,40 @@ void dvbapi_process_input(int32_t demux_id, int32_t filter_num, uchar *buffer, i
 			dvbapi_stop_filternum(demux_id, filter_num);
 			return;
 		}
+
+#ifdef WITH_EMU
+		if((demux[demux_id].demux_fd[filter_num].caid>>8)==0x10)
+		{
+			uint32_t i;
+			uint32_t emmhash;
+
+			if(sctlen < 4)
+			{
+				return;
+			}
+
+			for(i=0; i+2<sctlen; i++)
+			{
+				if(buffer[i]==0xF0 && (buffer[i+2]==0xE1 || buffer[i+2]==0xE4))
+				{
+					emmhash = (buffer[3]<<8) | buffer[sctlen-2];
+
+					if(demux[demux_id].demux_fd[filter_num].cadata == emmhash)
+					{
+						return;
+					}
+
+					demux[demux_id].demux_fd[filter_num].cadata = emmhash;
+
+					dvbapi_process_emm(demux_id, filter_num, buffer, sctlen);
+					return;
+				}
+			}
+
+			return;
+		}
+#endif
+
 		dvbapi_process_emm(demux_id, filter_num, buffer, sctlen);
 	}
 	
@@ -6126,6 +6327,9 @@ void dvbapi_send_dcw(struct s_client *client, ECM_REQUEST *er)
 
 		delayer(er, delay);
 
+#ifdef WITH_EMU
+		if(er->caid>>8 != 0x0E || !cfg.emu_stream_relay_enabled)
+#endif
 		switch(selected_api)
 		{
 #if defined(WITH_STAPI) || defined(WITH_STAPI5)
@@ -6491,12 +6695,19 @@ int32_t dvbapi_set_section_filter(int32_t demux_index, ECM_REQUEST *er, int32_t 
 	if(er->ecm[0] == 0x80) { ecmfilter = 0x81; }  // current processed ecm is even, next will be filtered for odd
 	else { ecmfilter = 0x80; } // current processed ecm is odd, next will be filtered for even
 
-	if(curpid->table != 0)   // cycle ecmtype from odd to even or even to odd
+	if(caid_is_dvn(er->caid))
+	{
+		filter[0] = 0x50; // set filter to wait for any ecms
+		mask[0] = 0xFF;
+		cs_log_dbg(D_DVBAPI, "Demuxer %d Filter %d set ecmtable to %s (CAID %04X PROVID %06X FD %d)", demux_index, n + 1,
+				   "EVEN+ODD", curpid->CAID, curpid->PROVID, fd);
+	}
+	else if(curpid->table != 0)   // cycle ecmtype from odd to even or even to odd
 	{
 		filter[0] = ecmfilter; // only accept new ecms (if previous odd, filter for even and visaversa)
 		mask[0] = 0xFF;
 		cs_log_dbg(D_DVBAPI, "Demuxer %d Filter %d set ecmtable to %s (CAID %04X PROVID %06X FD %d)", demux_index, n + 1,
-					  (ecmfilter == 0x80 ? "EVEN" : "ODD"), curpid->CAID, curpid->PROVID, fd);
+					  ((ecmfilter == 0x80) ? "EVEN" : "ODD"), curpid->CAID, curpid->PROVID, fd);
 	}
 	else  // not decoding right now so we are interessted in all ecmtypes!
 	{
@@ -6529,8 +6740,8 @@ int32_t dvbapi_set_section_filter(int32_t demux_index, ECM_REQUEST *er, int32_t 
 			offset = 11;
 			break; // videoguard
 		case 0x4A:  // DRE-Crypt, Bulcrypt,Tongang and others?
-			if(!caid_is_bulcrypt(er->caid))
-				{ offset = 6; }
+			if(caid_is_dre(er->caid))
+				offset = 6;
 			break;
 		}
 	}
@@ -7289,6 +7500,7 @@ void module_dvbapi(struct s_module *ph)
 	ph->desc = "dvbapi";
 	ph->type = MOD_CONN_SERIAL;
 	ph->listenertype = LIS_DVBAPI;
+	ph->cleanup = dvbapi_cleanup;
 #if defined(WITH_AZBOX)
 	ph->s_handler = azbox_handler;
 	ph->send_dcw = azbox_send_dcw;
