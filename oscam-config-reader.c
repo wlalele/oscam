@@ -934,7 +934,7 @@ static const struct config_list reader_opts[] =
 	DEF_OPT_FUNC("savenano"             , OFS(s_nano),                  nano_fn),
 	DEF_OPT_FUNC("blocknano"            , OFS(b_nano),                  nano_fn),
 	DEF_OPT_INT8("dropbadcws"           , OFS(dropbadcws),              0),
-	DEF_OPT_INT8("disablecrccws"        , OFS(disablecrccws),           0),
+	DEF_OPT_INT8("disablecrccws"        , OFS(disablecrccws),           1),
 	DEF_OPT_INT32("use_gpio"            , OFS(use_gpio),                0),
 #ifdef MODULE_PANDORA
 	DEF_OPT_UINT8("pand_send_ecm"       , OFS(pand_send_ecm),           0),
